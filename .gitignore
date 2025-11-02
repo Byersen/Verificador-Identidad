@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Data (Ignorar todas las fotos y datos crudos/procesados)
+data/
+
+# Archivos de SO
+.DS_Store
+Thumbs.db
+
+# Configuración local
+.env

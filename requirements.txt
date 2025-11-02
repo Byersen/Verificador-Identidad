@@ -1,0 +1,15 @@
+# --- Core ML/DL ---
+torch
+facenet-pytorch
+scikit-learn
+joblib
+
+# --- Web API ---
+Flask
+gunicorn
+
+# --- Utilities ---
+numpy
+Pillow
+python-dotenv
+matplotlib
