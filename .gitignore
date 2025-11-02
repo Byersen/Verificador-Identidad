@@ -9,7 +9,7 @@ venv/
 ENV/
 
 # Data (Ignorar todas las fotos y datos)
-data/
+data/me
 
 # Artefactos (Ignorar modelos, reportes y métricas)
 models/
