@@ -8,8 +8,12 @@ __pycache__/
 venv/
 ENV/
 
-# Data (Ignorar todas las fotos y datos crudos/procesados)
+# Data (Ignorar todas las fotos y datos)
 data/
+
+# Artefactos (Ignorar modelos, reportes y métricas)
+models/
+reports/
 
 # Archivos de SO
 .DS_Store
