@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score, roc_auc_score, f1_score
+import json
 import joblib
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -56,6 +58,22 @@ def main():
     logging.info("Training LogisticRegression...")
     model.fit(X_train_scaled, y_train)
     logging.info("Training completed.")
+
+    try:
+        y_pred = model.predict(X_val_scaled)
+        y_proba = model.predict_proba(X_val_scaled)[:, 1]
+
+        metrics = {
+            "accuracy": accuracy_score(y_val, y_pred),
+            "f1_score": f1_score(y_val, y_pred),
+            "roc_auc": roc_auc_score(y_val, y_proba),
+            "total_validation_samples": int(len(y_val)),
+            "positive_samples_val": int(np.sum(y_val))
+        }
+
+        logging.info(f"Validation metrics: {json.dumps(metrics, indent=2)}")
+    except Exception as e:
+        logging.warning(f"Could not compute validation metrics: {e}")
 
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     joblib.dump(model, MODEL_DIR / "model.joblib")
