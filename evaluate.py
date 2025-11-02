@@ -122,3 +122,15 @@ def generate_reports(model, X_test, y_test):
         json.dump(metrics, f, indent=4)
     
     logging.info("All reports generated and metrics updated.")
+
+
+def main():
+    artifacts = load_artifacts_and_data()
+    if artifacts:
+        model, X_test_scaled, y_test = artifacts
+        generate_reports(model, X_test_scaled, y_test)
+        logging.info("Evaluation completed. Reports saved successfully.")
+
+
+if __name__ == "__main__":
+    main()
