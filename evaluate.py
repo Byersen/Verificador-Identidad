@@ -9,7 +9,7 @@ from sklearn.metrics import precision_recall_curve
 import matplotlib.pyplot as plt
 from sklearn.metrics import (
     confusion_matrix, ConfusionMatrixDisplay,
-    RocCurveDisplay, f1_score
+    RocCurveDisplay, PrecisionRecallDisplay, f1_score
 )
 import json
 
@@ -66,31 +66,59 @@ REPORTS_DIR = Path("reports/")
 
 
 def generate_reports(model, X_test, y_test):
-    """Generate confusion matrix and ROC curve reports."""
+    """Generate evaluation reports and visualizations."""
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     
     y_proba = model.predict_proba(X_test)[:, 1]
     best_threshold = find_best_threshold(y_test, y_proba)
     y_pred = (y_proba >= best_threshold).astype(int)
     
-    cm = confusion_matrix(y_test, y_pred)
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Not Me", "Me"])
-    disp.plot(cmap=plt.cm.Blues)
-    plt.title(f"Confusion Matrix (Threshold = {best_threshold:.2f})")
-    plt.savefig(REPORTS_DIR / "confusion_matrix.png")
-    plt.close()
+    # Confusion Matrix
+    try:
+        cm = confusion_matrix(y_test, y_pred)
+        disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Not Me", "Me"])
+        disp.plot(cmap=plt.cm.Blues)
+        plt.title(f"Confusion Matrix (Threshold = {best_threshold:.2f})")
+        plt.savefig(REPORTS_DIR / "confusion_matrix.png")
+        plt.close()
+    except Exception as e:
+        logging.error(f"Failed to create confusion matrix: {e}")
+
+    # ROC Curve
+    try:
+        display = RocCurveDisplay.from_predictions(y_test, y_proba, name="Identity Verifier")
+        display.plot()
+        plt.title("ROC Curve")
+        plt.savefig(REPORTS_DIR / "roc_curve.png")
+        plt.close()
+    except Exception as e:
+        logging.error(f"Failed to create ROC curve: {e}")
+
+    # Precision-Recall Curve
+    try:
+        display = PrecisionRecallDisplay.from_predictions(y_test, y_proba, name="Identity Verifier")
+        display.plot()
+        plt.title("Precision-Recall Curve")
+        plt.savefig(REPORTS_DIR / "precision_recall_curve.png")
+        plt.close()
+    except Exception as e:
+        logging.error(f"Failed to create PR curve: {e}")
+
+    # Metrics
+    metrics_path = REPORTS_DIR / "metrics.json"
+    metrics = {}
+    if metrics_path.exists():
+        try:
+            with open(metrics_path, 'r') as f:
+                metrics = json.load(f)
+        except Exception:
+            metrics = {}
     
-    display = RocCurveDisplay.from_predictions(y_test, y_proba, name="Identity Verifier")
-    display.plot()
-    plt.title("ROC Curve")
-    plt.savefig(REPORTS_DIR / "roc_curve.png")
-    plt.close()
+    metrics["best_threshold"] = best_threshold
+    metrics["evaluation_f1_score"] = f1_score(y_test, y_pred)
+    metrics["evaluation_accuracy"] = float(np.mean(y_test == y_pred))
     
-    metrics = {
-        "best_threshold": best_threshold,
-        "evaluation_f1_score": f1_score(y_test, y_pred)
-    }
-    with open(REPORTS_DIR / "metrics.json", 'w') as f:
+    with open(metrics_path, 'w') as f:
         json.dump(metrics, f, indent=4)
     
-    logging.info("Reports generated successfully.")
+    logging.info("All reports generated and metrics updated.")
