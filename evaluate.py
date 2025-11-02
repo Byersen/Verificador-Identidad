@@ -6,6 +6,12 @@ import logging
 from dotenv import load_dotenv
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import precision_recall_curve
+import matplotlib.pyplot as plt
+from sklearn.metrics import (
+    confusion_matrix, ConfusionMatrixDisplay,
+    RocCurveDisplay, f1_score
+)
+import json
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 load_dotenv()
@@ -45,13 +51,46 @@ def find_best_threshold(y_true, y_proba):
     """Find the probability threshold that maximizes the F1-score."""
     precisions, recalls, thresholds = precision_recall_curve(y_true, y_proba)
     
-    # Exclude the last value where recall=0
     f1_scores = (2 * precisions[:-1] * recalls[:-1]) / (precisions[:-1] + recalls[:-1])
     f1_scores = np.nan_to_num(f1_scores, nan=0.0)
     
     if len(f1_scores) == 0:
-        return 0.5  # fallback threshold
+        return 0.5
     
     best_idx = np.argmax(f1_scores)
     best_threshold = thresholds[best_idx]
     return float(best_threshold)
+
+
+REPORTS_DIR = Path("reports/")
+
+
+def generate_reports(model, X_test, y_test):
+    """Generate confusion matrix and ROC curve reports."""
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    
+    y_proba = model.predict_proba(X_test)[:, 1]
+    best_threshold = find_best_threshold(y_test, y_proba)
+    y_pred = (y_proba >= best_threshold).astype(int)
+    
+    cm = confusion_matrix(y_test, y_pred)
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Not Me", "Me"])
+    disp.plot(cmap=plt.cm.Blues)
+    plt.title(f"Confusion Matrix (Threshold = {best_threshold:.2f})")
+    plt.savefig(REPORTS_DIR / "confusion_matrix.png")
+    plt.close()
+    
+    display = RocCurveDisplay.from_predictions(y_test, y_proba, name="Identity Verifier")
+    display.plot()
+    plt.title("ROC Curve")
+    plt.savefig(REPORTS_DIR / "roc_curve.png")
+    plt.close()
+    
+    metrics = {
+        "best_threshold": best_threshold,
+        "evaluation_f1_score": f1_score(y_test, y_pred)
+    }
+    with open(REPORTS_DIR / "metrics.json", 'w') as f:
+        json.dump(metrics, f, indent=4)
+    
+    logging.info("Reports generated successfully.")
