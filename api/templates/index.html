@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Verificador de identidad</title>
+</head>
+<body>
+  
+  <div class="container">
+    <header>
+      <h1>Verificador de identidad</h1>
+      <div id="modelInfo">Cargando información del modelo...</div>
+    </header>
+
+    <section class="controls">
+      <div class="upload-section">
+        <h3>Probar con archivo</h3>
+        <form id="uploadForm">
+          <label for="imageInput">Selecciona imagen (JPEG/PNG):</label>
+          <input type="file" id="imageInput" name="image" accept="image/png,image/jpeg">
+          <div style="margin-top:1rem"><button type="submit" id="submitBtn">Verificar Archivo</button></div>
+        </form>
+      </div>
+
+      <div class="camera-section">
+        <h3>Probar con cámara</h3>
+        <button id="openCam">Usar cámara</button>
+        <div id="cameraArea">
+          <video id="video" width="320" height="240" autoplay playsinline></video>
+          <div class="camera-buttons">
+            <button id="captureBtn">Tomar foto y Verificar</button>
+            <button id="closeCam">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="resultBox">
+      <h2>Resultado</h2>
+      <div id="badge"></div>
+      
+      <div class="scoreBarWrap"><div id="scoreBar" class="scoreBar"></div></div>
+      
+      <div id="statsResult">
+        <div class="stat-item">
+          <strong>Decisión:</strong>
+          <span id="stat-decision">--</span>
+        </div>
+        <div class="stat-item">
+          <strong>Confianza (Score):</strong>
+          <span id="stat-score">--</span>
+        </div>
+        <div class="stat-item">
+          <strong>Umbral (Threshold):</strong>
+          <span id="stat-threshold">--</span>
+        </div>
+        <div class="stat-item">
+          <strong>Tiempo de Proceso:</strong>
+          <span id="stat-timing">--</span>
+        </div>
+        <div class="stat-item">
+          <strong>Versión del Modelo:</strong>
+          <span id="stat-version">--</span>
+        </div>
+      </div>
+
+      <details class="json-toggle">
+        <summary>Ver respuesta JSON cruda</summary>
+        <pre id="output">Esperando envío...</pre>
+      </details>
+    </section>
+  </div>
+
+  <script>
+    const G = {
+      form: document.getElementById('uploadForm'),
+      imageInput: document.getElementById('imageInput'),
+      submitBtn: document.getElementById('submitBtn'),
+      output: document.getElementById('output'),
+      modelInfo: document.getElementById('modelInfo'),
+      openCam: document.getElementById('openCam'),
+      cameraArea: document.getElementById('cameraArea'),
+      video: document.getElementById('video'),
+      captureBtn: document.getElementById('captureBtn'),
+      closeCam: document.getElementById('closeCam'),
+      badge: document.getElementById('badge'),
+      scoreBar: document.getElementById('scoreBar'),
+      statsResult: document.getElementById('statsResult'),
+      stream: null
+    };
+
+    async function fetchHealth(){
+      try {
+        const resp = await fetch('/healthz');
+        const j = await resp.json();
+        G.modelInfo.textContent = `Modelo: ${j.version} | Umbral de reporte (eval): ${j.best_threshold ? j.best_threshold.toFixed(4) : 'n/a'}`;
+      } catch(e) { 
+        console.warn('healthz fail', e); 
+        G.modelInfo.textContent = 'Modelo: no disponible'; 
+      }
+    }
+
+    async function handleVerification(formData, buttonElement) {
+      const originalBtnText = buttonElement.textContent;
+      buttonElement.textContent = 'Procesando...';
+      buttonElement.disabled = true;
+
+      G.output.textContent = 'Procesando...';
+      G.badge.style.display = 'none';
+      G.statsResult.style.display = 'none';
+      G.scoreBar.style.width = '0%';
+      
+      try {
+        const resp = await fetch('/verify', { method: 'POST', body: formData });
+        const text = await resp.text();
+        let jsonData;
+        try { 
+          jsonData = JSON.parse(text); 
+          renderResult(jsonData);
+        } catch(err) { 
+          G.output.textContent = 'Error: Respuesta no JSON del servidor:\n' + text; 
+          G.badge.textContent = 'Error';
+          G.badge.className = 'not-me';
+          G.badge.style.display = 'block';
+        }
+      } catch(err) { 
+        G.output.textContent = 'Error fatal en la petición: ' + err; 
+        G.badge.textContent = 'Error de Conexión';
+        G.badge.className = 'not-me';
+        G.badge.style.display = 'block';
+      } finally {
+        buttonElement.textContent = originalBtnText;
+        buttonElement.disabled = false;
+      }
+    }
+
+    function renderResult(j){
+      G.output.textContent = JSON.stringify(j, null, 2);
+      
+      G.badge.className = '';
+      if (j.is_me === true) {
+        G.badge.textContent = 'VERIFICADO (ERES SEBASTIAN)';
+        G.badge.classList.add('me');
+      } else if (j.is_me === false) {
+        G.badge.textContent = 'NO VERIFICADO (NO ERES SEBASTIAN)';
+        G.badge.classList.add('not-me');
+      } else if (j.error) {
+         G.badge.textContent = `ERROR: ${j.error}`;
+         G.badge.classList.add('not-me');
+      }
+      G.badge.style.display = 'block';
+
+      const score = (typeof j.score === 'number') ? Math.max(0, Math.min(1, j.score)) : 0;
+      const threshold = j.threshold ?? 0.75;
+      G.scoreBar.style.width = `${Math.round(score * 100)}%`;
+      
+      if (score >= threshold) {
+        G.scoreBar.style.backgroundColor = 'var(--color-me)';
+      } else if (score > threshold * 0.5) {
+        G.scoreBar.style.backgroundColor = 'var(--color-unsure)';
+      } else {
+        G.scoreBar.style.backgroundColor = 'var(--color-not-me)';
+      }
+
+      if(j.is_me !== undefined) {
+        document.getElementById('stat-decision').textContent = j.is_me ? 'VERIFICADO (SOY YO)' : 'NO VERIFICADO (NO SOY YO)';
+        document.getElementById('stat-score').textContent = `${(j.score * 100).toFixed(2)} %`;
+        document.getElementById('stat-threshold').textContent = `${(j.threshold * 100).toFixed(0)} % (Requerido)`;
+        document.getElementById('stat-timing').textContent = `${j.timing_ms.toFixed(0)} ms`;
+        document.getElementById('stat-version').textContent = j.model_version;
+      } else {
+        document.getElementById('stat-decision').textContent = j.error ? j.error.toUpperCase() : 'Error';
+        document.getElementById('stat-score').textContent = '--';
+        document.getElementById('stat-threshold').textContent = '--';
+        document.getElementById('stat-timing').textContent = '--';
+        document.getElementById('stat-version').textContent = j.model_version || '--';
+      }
+      
+      G.statsResult.style.display = 'grid';
+    }
+
+    G.form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const file = G.imageInput.files[0];
+      if (!file) { 
+        G.output.textContent = 'Selecciona una imagen primero.'; 
+        return; 
+      }
+      const fd = new FormData(); 
+      fd.append('image', file);
+      handleVerification(fd, G.submitBtn);
+    });
+
+    G.openCam.addEventListener('click', async () => {
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoInputs = devices.filter(d => d.kind === 'videoinput');
+        if (videoInputs.length === 0) { 
+          G.output.textContent = 'No se detectaron cámaras en este dispositivo.'; 
+          return; 
+        }
+        G.stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        G.video.srcObject = G.stream;
+        try { await G.video.play(); } catch(e) { console.warn('video.play fail', e); }
+        G.cameraArea.style.display = 'block';
+        G.openCam.style.display = 'none';
+        G.output.textContent = 'Cámara abierta. Presiona "Tomar foto" para verificar.';
+      } catch(err) { 
+        console.error('getUserMedia', err); 
+        G.output.textContent = 'No se pudo acceder a la cámara. Revisa permisos y que no la use otra app.'; 
+      }
+    });
+
+    G.closeCam.addEventListener('click', () => {
+      if (G.stream) { 
+        G.stream.getTracks().forEach(t => t.stop()); 
+        G.stream = null; 
+      }
+      G.cameraArea.style.display = 'none';
+      G.openCam.style.display = 'block';
+    });
+
+    G.captureBtn.addEventListener('click', () => {
+      if (!G.stream) { 
+        G.output.textContent = 'Cámara no activa.'; 
+        return; 
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = G.video.videoWidth || 320; 
+      canvas.height = G.video.videoHeight || 240;
+      canvas.getContext('2d').drawImage(G.video, 0, 0, canvas.width, canvas.height);
+      
+      canvas.toBlob(async (blob) => {
+        const fd = new FormData(); 
+        fd.append('image', blob, 'capture.jpg');
+        handleVerification(fd, G.captureBtn);
+      }, 'image/jpeg');
+    });
+
+    // --- Init ---
+    fetchHealth();
+    
+  </script>
+
+  <style>
+    :root {
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      --bg-color: #f8f9fa;
+      --card-bg: #ffffff;
+      --text-color: #212529;
+      --text-muted: #6c757d;
+      --primary-color: #007bff;
+      --primary-hover: #0056b3;
+      --border-color: #dee2e6;
+      --border-radius: 8px;
+      --shadow: 0 4px 12px rgba(0,0,0,0.05);
+      --color-me: #28a745;
+      --color-not-me: #dc3545;
+      --color-unsure: #fd7e14;
+    }
+    body {
+      font-family: var(--font-family);
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      margin: 0;
+      padding: 1rem;
+    }
+    .container {
+      max-width: 900px;
+      margin: 2rem auto;
+      padding: 2rem;
+      background-color: var(--card-bg);
+      border-radius: var(--border-radius);
+      box-shadow: var(--shadow);
+    }
+    header {
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    h1 { margin: 0 0 0.5rem 0; }
+    #modelInfo { color: var(--text-muted); font-size: 0.9rem; }
+    
+    .controls {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      align-items: flex-start;
+    }
+    
+    @media (max-width: 600px) {
+      .controls { grid-template-columns: 1fr; }
+    }
+
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+    }
+    input[type="file"] {
+      display: block;
+      margin-top: 0.5rem;
+    }
+    button {
+      font-family: var(--font-family);
+      font-size: 1rem;
+      font-weight: 500;
+      background-color: var(--primary-color);
+      color: white;
+      border: none;
+      padding: 0.75rem 1.25rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background-color 0.2s ease, opacity 0.2s ease;
+    }
+    button:hover { background-color: var(--primary-hover); }
+    button:disabled {
+      background-color: #adb5bd;
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+    
+    #cameraArea { display: none; margin-top: 1rem; }
+    #video { 
+      border: 1px solid var(--border-color); 
+      border-radius: 6px;
+      width: 100%;
+      height: auto;
+      background: #eee;
+    }
+    .camera-buttons {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 0.5rem;
+    }
+    .camera-buttons button {
+      flex-grow: 1;
+      font-size: 0.9rem;
+      padding: 0.5rem;
+    }
+
+    .resultBox { margin-top: 2rem; }
+    
+    #badge {
+      font-size: 1.75rem;
+      font-weight: 600;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      display: none;
+      text-align: center;
+      margin-bottom: 1rem;
+      border: 1px solid transparent;
+    }
+    #badge.me { 
+      background-color: #d4edda; 
+      color: var(--color-me); 
+      border-color: #c3e6cb;
+      display: block; 
+    }
+    #badge.not-me { 
+      background-color: #f8d7da; 
+      color: var(--color-not-me); 
+      border-color: #f5c6cb;
+      display: block; 
+    }
+
+    .scoreBarWrap { 
+      height: 20px; 
+      background: var(--border-color); 
+      border-radius: 10px; 
+      overflow: hidden; 
+      margin: 1rem 0;
+    }
+    .scoreBar { 
+      height: 100%; 
+      width: 0%; 
+      background: var(--color-me); 
+      transition: width .3s ease, background-color .3s ease;
+    }
+
+    #statsResult {
+      display: none; 
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      padding: 1rem;
+      background-color: var(--card-bg);
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+    .stat-item {
+      padding: 0.5rem;
+      background-color: var(--bg-color);
+      border-radius: 6px;
+    }
+    .stat-item strong {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 0.25rem;
+    }
+    .stat-item span {
+      font-size: 1.2rem;
+      font-weight: 500;
+      color: var(--text-color);
+    }
+    
+    .json-toggle {
+      margin-top: 1.5rem;
+    }
+    .json-toggle summary {
+      cursor: pointer;
+      color: var(--primary-color);
+      font-size: 0.9rem;
+    }
+
+    pre {
+      background: #fdfdfe;
+      border: 1px solid var(--border-color);
+      padding: 1rem;
+      border-radius: 6px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-family: "Courier New", Courier, monospace;
+      margin-top: 0.5rem;
+    }
+  </style>
+</body>
+</html>
