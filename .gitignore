@@ -10,6 +10,7 @@ ENV/
 
 # Data (Ignorar todas las fotos y datos)
 data/me
+data/cropped/me
 
 # Artefactos (Ignorar modelos, reportes y métricas)
 models/
