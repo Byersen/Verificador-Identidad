@@ -140,10 +140,10 @@
       
       G.badge.className = '';
       if (j.is_me === true) {
-        G.badge.textContent = 'VERIFICADO (ERES SEBASTIAN)';
+        G.badge.textContent = 'VERIFICADO';
         G.badge.classList.add('me');
       } else if (j.is_me === false) {
-        G.badge.textContent = 'NO VERIFICADO (NO ERES SEBASTIAN)';
+        G.badge.textContent = 'NO VERIFICADO';
         G.badge.classList.add('not-me');
       } else if (j.error) {
          G.badge.textContent = `ERROR: ${j.error}`;
